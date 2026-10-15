@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # AI-Powered Centralized College Resource Sharing Hub
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -186,3 +187,6 @@ The database seed script generates pre-configured test users (Password: `Passwor
 ## 📄 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+=======
+# AI-Centralized-College-Hub-Resoures
+>>>>>>> 2bd4dfca9dd6203a8685c5da1e4e4c73cdf7ab93
