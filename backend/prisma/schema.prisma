@@ -1,0 +1,408 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  FACULTY
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum ResourceStatus {
+  PROCESSING
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  ARCHIVED
+  FLAGGED
+}
+
+enum ResourceVisibility {
+  PUBLIC
+  COLLEGE_ONLY
+  DEPARTMENT_ONLY
+  SUBJECT_ONLY
+}
+
+enum ReportStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+enum DuplicateType {
+  EXACT
+  SEMANTIC
+}
+
+enum DuplicateStatus {
+  PENDING
+  RESOLVED
+  DISMISSED
+}
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  role         Role       @default(STUDENT)
+  status       UserStatus @default(ACTIVE)
+  avatarUrl    String?
+  departmentId String?
+  programId    String?
+  semesterId   String?
+
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  program    Program?    @relation(fields: [programId], references: [id], onDelete: SetNull)
+  semester   Semester?   @relation(fields: [semesterId], references: [id], onDelete: SetNull)
+
+  resourceVersions  ResourceVersion[]
+  bookmarks         Bookmark[]
+  downloads         Download[]
+  ratings           Rating[]
+  reports           Report[]          @relation("ReportedBy")
+  resolvedReports   Report[]          @relation("ResolvedBy")
+  notifications     Notification[]
+  auditLogs         AuditLog[]        @relation("Actor")
+  searchHistories   SearchHistory[]
+
+  resourcesUploaded Resource[] @relation("UploadedBy")
+  resourcesApproved Resource[] @relation("ApprovedBy")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([role])
+  @@index([departmentId])
+}
+
+model Department {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  description String?
+  isDeleted   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users     User[]
+  programs  Program[]
+  subjects  Subject[]
+  resources Resource[]
+}
+
+model Program {
+  id             String   @id @default(uuid())
+  code           String   @unique
+  name           String
+  durationYears  Int      @default(4)
+  totalSemesters Int      @default(8)
+  departmentId   String
+  isDeleted      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  users      User[]
+  semesters  Semester[]
+  resources  Resource[]
+
+  @@index([departmentId])
+}
+
+model Semester {
+  id        String   @id @default(uuid())
+  number    Int
+  name      String
+  programId String
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  program   Program    @relation(fields: [programId], references: [id], onDelete: Cascade)
+  users     User[]
+  subjects  Subject[]
+  resources Resource[]
+
+  @@unique([programId, number])
+  @@index([programId])
+}
+
+model Subject {
+  id           String   @id @default(uuid())
+  code         String   @unique
+  name         String
+  description  String?
+  semesterId   String
+  departmentId String
+  isDeleted    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  semester   Semester   @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  resources  Resource[]
+
+  @@index([semesterId])
+  @@index([departmentId])
+}
+
+model Category {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  resources Resource[]
+}
+
+model Resource {
+  id               String             @id @default(uuid())
+  title            String
+  description      String?
+  originalFileName String
+  storedFileName   String
+  filePath         String
+  fileSize         Int
+  mimeType         String
+  fileExtension    String
+  checksum         String             @unique
+  status           ResourceStatus     @default(PROCESSING)
+  visibility       ResourceVisibility @default(PUBLIC)
+
+  categoryId   String
+  departmentId String?
+  programId    String?
+  semesterId   String?
+  subjectId    String?
+
+  uploadedById String
+  approvedById String?
+  approvedAt   DateTime?
+  rejectionReason String?
+
+  viewCount       Int     @default(0)
+  downloadCount   Int     @default(0)
+  averageRating   Float   @default(0.0)
+  isFeatured      Boolean @default(false)
+  isDeleted       Boolean @default(false)
+  processingError String?
+
+  aiCategory   String?
+  aiConfidence Float?
+  aiKeywords   String[] @default([])
+
+  category   Category    @relation(fields: [categoryId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  program    Program?    @relation(fields: [programId], references: [id], onDelete: SetNull)
+  semester   Semester?   @relation(fields: [semesterId], references: [id], onDelete: SetNull)
+  subject    Subject?    @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  uploadedBy User  @relation("UploadedBy", fields: [uploadedById], references: [id], onDelete: Cascade)
+  approvedBy User? @relation("ApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  chunks             ResourceChunk[]
+  versions           ResourceVersion[]
+  bookmarks          Bookmark[]
+  downloads          Download[]
+  ratings            Rating[]
+  reports            Report[]
+  originalDuplicates DuplicateRecord[]  @relation("OriginalResource")
+  matchedDuplicates  DuplicateRecord[]  @relation("DuplicateResource")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([categoryId])
+  @@index([departmentId])
+  @@index([subjectId])
+  @@index([uploadedById])
+  @@index([checksum])
+  @@index([createdAt])
+}
+
+model ResourceChunk {
+  id         String   @id @default(uuid())
+  resourceId String
+  chunkIndex Int
+  content    String
+  tokenCount Int      @default(0)
+  embedding  String?  // JSON stringified vector array [384]
+  createdAt  DateTime @default(now())
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@index([resourceId])
+}
+
+model ResourceVersion {
+  id                String   @id @default(uuid())
+  resourceId        String
+  versionNumber     Int
+  storedFileName    String
+  filePath          String
+  fileSize          Int
+  checksum          String
+  uploadedById      String
+  changeDescription String?
+  createdAt         DateTime @default(now())
+
+  resource   Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  uploadedBy User     @relation(fields: [uploadedById], references: [id])
+
+  @@index([resourceId])
+}
+
+model Bookmark {
+  id         String   @id @default(uuid())
+  userId     String
+  resourceId String
+  folderName String   @default("General")
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, resourceId])
+  @@index([userId])
+}
+
+model Download {
+  id           String   @id @default(uuid())
+  userId       String
+  resourceId   String
+  ipAddress    String?
+  userAgent    String?
+  downloadedAt DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([resourceId])
+}
+
+model Rating {
+  id         String   @id @default(uuid())
+  userId     String
+  resourceId String
+  rating     Int
+  review     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, resourceId])
+  @@index([resourceId])
+}
+
+model Report {
+  id           String       @id @default(uuid())
+  userId       String
+  resourceId   String
+  reason       String
+  description  String?
+  status       ReportStatus @default(OPEN)
+  resolvedById String?
+  resolvedAt   DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  user       User     @relation("ReportedBy", fields: [userId], references: [id], onDelete: Cascade)
+  resource   Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  resolvedBy User?    @relation("ResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([resourceId])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  type      String   @default("INFO")
+  isRead    Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation("Actor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([action])
+  @@index([actorId])
+  @@index([createdAt])
+}
+
+model SearchHistory {
+  id                 String   @id @default(uuid())
+  userId             String?
+  query              String
+  filters            Json?
+  resultCount        Int      @default(0)
+  clickedResourceId String?
+  createdAt          DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([query])
+}
+
+model DuplicateRecord {
+  id                  String          @id @default(uuid())
+  originalResourceId String
+  duplicateResourceId String
+  similarityScore     Float
+  duplicateType       DuplicateType   @default(SEMANTIC)
+  status              DuplicateStatus @default(PENDING)
+  createdAt           DateTime        @default(now())
+
+  originalResource  Resource @relation("OriginalResource", fields: [originalResourceId], references: [id], onDelete: Cascade)
+  duplicateResource Resource @relation("DuplicateResource", fields: [duplicateResourceId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+model SystemSetting {
+  key         String   @id
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+}
